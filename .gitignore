@@ -2,6 +2,7 @@
 /[Aa]ssets/Samples.meta
 /[Pp]ackages/*.tgz
 *_DoNotShip/
+/.utmp/
 
 # from https://github.com/github/gitignore/blob/main/Unity.gitignore
 /[Ll]ibrary/

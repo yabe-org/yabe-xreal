@@ -11,6 +11,8 @@ public class CameraOverride : MonoBehaviour
     private static extern void yabe_compositor_draw(ref Matrix4x4 pv_mat);
     [DllImport(LIBRARY_NAME)]
     private static extern bool is_compositor_running();
+    [DllImport(LIBRARY_NAME)]
+    private static extern void terminate_compositor();
 
     private CommandBuffer commandBuffer;
     private Camera targetCamera;
@@ -35,6 +37,16 @@ public class CameraOverride : MonoBehaviour
         commandBuffer.IssuePluginEvent(handlePtr, 0);
 
         targetCamera.AddCommandBuffer(CameraEvent.AfterForwardOpaque, commandBuffer);
+    }
+    void OnDisable()
+    {
+        if (targetCamera != null && commandBuffer != null)
+        {
+            targetCamera.RemoveCommandBuffer(CameraEvent.AfterForwardOpaque, commandBuffer);
+            commandBuffer.Release();
+            commandBuffer = null;
+        }
+        terminate_compositor();
     }
 
     void Update()

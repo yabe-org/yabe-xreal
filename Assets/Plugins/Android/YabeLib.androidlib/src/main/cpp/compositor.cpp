@@ -22,6 +22,18 @@ bool is_compositor_running() {
   return is_compositor_running_;
 }
 
+void terminate_compositor() {
+  if (compositor_thread.joinable()) {
+    LOG_DBG("terminating compositor thread");
+    yabe_compositor_terminate();
+    compositor_thread.join();
+    is_compositor_running_ = false;
+    LOG_DBG("compositor thread terminated");
+  } else {
+    LOG_DBG("compositor thread is not running");
+  }
+}
+
 JNIEXPORT void JNICALL Java_org_yabe_xreal_CompositorService_startCompositor(
     JNIEnv* env, jobject obj) {
   compositor_thread      = std::thread([]() {
@@ -42,20 +54,12 @@ JNIEXPORT void JNICALL Java_org_yabe_xreal_CompositorService_addClientFd(
 
 JNIEXPORT void JNICALL
 Java_org_yabe_xreal_CompositorService_terminateCompositor() {
-  if (compositor_thread.joinable()) {
-    LOG_DBG("terminating compositor thread");
-    yabe_compositor_terminate();
-    compositor_thread.join();
-    is_compositor_running_ = false;
-    LOG_DBG("compositor thread terminated");
-  } else {
-    LOG_DBG("compositor thread is not running");
-  }
+  terminate_compositor();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_org_yabe_xreal_CompositorService_isCompositorRunning(JNIEnv *env,
-                                                          jobject obj) {
+Java_org_yabe_xreal_CompositorService_isCompositorRunning(
+    JNIEnv* env, jobject obj) {
   return is_compositor_running_;
 }
 }

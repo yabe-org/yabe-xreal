@@ -31,6 +31,10 @@ class CompositorService : Service() {
         }
 
         override fun addClientFd(pfd: ParcelFileDescriptor?) {
+            if (!isCompositorRunning()) {
+                Log.e(TAG, "Called addClientFd() but compositor is not running")
+                return
+            }
             if (pfd == null) {
                 Log.e(TAG, "Received null ParcelFileDescriptor")
                 return

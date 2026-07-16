@@ -17,10 +17,24 @@ public class CameraOverride : MonoBehaviour
     private const float NearClip = 0.002f;
     private const float FarClip = 100.0f;
 
-    private CommandBuffer commandBuffer;
+    private CommandBuffer leftCommandBuffer;
+    private CommandBuffer rightCommandBuffer;
     private Camera targetCamera;
+    private Camera rightCamera;
+    private StereoTargetEyeMask originalTargetEye;
 
-    private static Matrix4x4 cachedVpMatrix = Matrix4x4.identity;
+    private enum EyeEvent
+    {
+        Left = 0,
+        Right = 1,
+    }
+
+    private static readonly object vpMatrixLock = new object();
+    private static readonly Matrix4x4[] cachedVpMatrices =
+    {
+        Matrix4x4.identity,
+        Matrix4x4.identity,
+    };
 
     private delegate void RenderEventHandler(int eventID);
     private static RenderEventHandler handle = new RenderEventHandler(HandlePluginEvent);
@@ -34,20 +48,36 @@ public class CameraOverride : MonoBehaviour
         if (targetCamera == null) targetCamera = Camera.main;
         if (targetCamera == null) return;
 
-        commandBuffer = new CommandBuffer();
-        commandBuffer.name = "XREAL_NativeRenderingPlugin";
-        commandBuffer.ClearRenderTarget(true, true, Color.red);
-        commandBuffer.IssuePluginEvent(handlePtr, 0);
+        originalTargetEye = targetCamera.stereoTargetEye;
+        targetCamera.stereoTargetEye = StereoTargetEyeMask.Left;
 
-        targetCamera.AddCommandBuffer(CameraEvent.AfterForwardOpaque, commandBuffer);
+        // A multipass camera replays the same command buffer for both eyes, so use a
+        // dedicated camera and event ID for each eye instead of guessing the active eye.
+        GameObject rightCameraObject = new GameObject("Yabe Right Eye Camera");
+        rightCameraObject.transform.SetParent(targetCamera.transform, false);
+        rightCamera = rightCameraObject.AddComponent<Camera>();
+        rightCamera.CopyFrom(targetCamera);
+        rightCamera.stereoTargetEye = StereoTargetEyeMask.Right;
+
+        leftCommandBuffer = CreateCommandBuffer("Yabe Left Eye", EyeEvent.Left);
+        rightCommandBuffer = CreateCommandBuffer("Yabe Right Eye", EyeEvent.Right);
+        targetCamera.AddCommandBuffer(CameraEvent.AfterForwardOpaque, leftCommandBuffer);
+        rightCamera.AddCommandBuffer(CameraEvent.AfterForwardOpaque, rightCommandBuffer);
+
+        UpdateCachedVpMatrices();
     }
     void OnDisable()
     {
-        if (targetCamera != null && commandBuffer != null)
+        if (targetCamera != null)
         {
-            targetCamera.RemoveCommandBuffer(CameraEvent.AfterForwardOpaque, commandBuffer);
-            commandBuffer.Release();
-            commandBuffer = null;
+            targetCamera.stereoTargetEye = originalTargetEye;
+            ReleaseCommandBuffer(targetCamera, ref leftCommandBuffer);
+        }
+        if (rightCamera != null)
+        {
+            ReleaseCommandBuffer(rightCamera, ref rightCommandBuffer);
+            Destroy(rightCamera.gameObject);
+            rightCamera = null;
         }
         terminate_compositor();
     }
@@ -61,34 +91,48 @@ public class CameraOverride : MonoBehaviour
     void Update()
     {
         if (targetCamera == null) return;
-        UpdateCachedVpMatrix(Camera.MonoOrStereoscopicEye.Mono);
+        UpdateCachedVpMatrices();
     }
 
-    void OnPreRender()
+    private static CommandBuffer CreateCommandBuffer(string name, EyeEvent eyeEvent)
     {
-        if (targetCamera == null) return;
-        UpdateCachedVpMatrix(targetCamera.stereoActiveEye);
+        CommandBuffer buffer = new CommandBuffer();
+        buffer.name = name;
+        buffer.ClearRenderTarget(true, true, Color.red);
+        buffer.IssuePluginEvent(handlePtr, (int)eyeEvent);
+        return buffer;
+    }
+    private static void ReleaseCommandBuffer(Camera camera, ref CommandBuffer buffer)
+    {
+        if (buffer == null) return;
+
+        camera.RemoveCommandBuffer(CameraEvent.AfterForwardOpaque, buffer);
+        buffer.Release();
+        buffer = null;
     }
 
-    void UpdateCachedVpMatrix(Camera.MonoOrStereoscopicEye activeEye)
+    private void UpdateCachedVpMatrices()
     {
-        XREALComponent component = activeEye == Camera.MonoOrStereoscopicEye.Right
+        Matrix4x4 leftVp = BuildVpMatrix(targetCamera, Camera.StereoscopicEye.Left);
+        Matrix4x4 rightVp = BuildVpMatrix(rightCamera, Camera.StereoscopicEye.Right);
+        lock (vpMatrixLock)
+        {
+            cachedVpMatrices[(int)EyeEvent.Left] = leftVp;
+            cachedVpMatrices[(int)EyeEvent.Right] = rightVp;
+        }
+    }
+
+    private static Matrix4x4 BuildVpMatrix(Camera camera, Camera.StereoscopicEye eye)
+    {
+        XREALComponent component = eye == Camera.StereoscopicEye.Right
             ? XREALComponent.XREAL_COMPONENT_DISPLAY_RIGHT
             : XREALComponent.XREAL_COMPONENT_DISPLAY_LEFT;
         Matrix4x4 proj = Matrix4x4.identity;
         XREALPlugin.GetCameraProjectionMatrix(component, NearClip, FarClip, ref proj);
 
-        Matrix4x4 view = targetCamera.worldToCameraMatrix;
-        if (activeEye == Camera.MonoOrStereoscopicEye.Left)
-        {
-            view = targetCamera.GetStereoViewMatrix(Camera.StereoscopicEye.Left);
-        }
-        else if (activeEye == Camera.MonoOrStereoscopicEye.Right)
-        {
-            view = targetCamera.GetStereoViewMatrix(Camera.StereoscopicEye.Right);
-        }
+        Matrix4x4 view = camera.GetStereoViewMatrix(eye);
         view = BuildCompositorViewMatrix(view);
-        cachedVpMatrix = proj * view;
+        return proj * view;
     }
 
     // Unity/XREAL uses +Z as forward and includes the tracked eye height, while the
@@ -107,13 +151,15 @@ public class CameraOverride : MonoBehaviour
     [AOT.MonoPInvokeCallback(typeof(RenderEventHandler))]
     static void HandlePluginEvent(int eventID)
     {
-        if (!is_compositor_running())
+        if (!is_compositor_running() || (eventID != (int)EyeEvent.Left && eventID != (int)EyeEvent.Right))
         {
             return;
         }
-        Matrix4x4 vp_mat = cachedVpMatrix;
         try {
-            yabe_compositor_draw(ref vp_mat);
+            lock (vpMatrixLock)
+            {
+                yabe_compositor_draw(ref cachedVpMatrices[eventID]);
+            }
         } catch (Exception e) {
             Debug.LogError("Error calling yabe_compositor_draw: " + e.Message);
         }

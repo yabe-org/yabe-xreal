@@ -14,6 +14,9 @@ public class CameraOverride : MonoBehaviour
     [DllImport(LIBRARY_NAME)]
     private static extern void terminate_compositor();
 
+    private const float NearClip = 0.002f;
+    private const float FarClip = 100.0f;
+
     private CommandBuffer commandBuffer;
     private Camera targetCamera;
 
@@ -48,26 +51,44 @@ public class CameraOverride : MonoBehaviour
         }
         terminate_compositor();
     }
+    void OnDestroy()
+    {
+        Debug.Log("CameraOverride OnDestroy called");
+        terminate_compositor();
+    }
+
 
     void Update()
     {
         if (targetCamera == null) return;
-
-        Matrix4x4 proj = Matrix4x4.identity;
-        const float near = 0.002f, far = 100.0f;
-        XREALPlugin.GetCameraProjectionMatrix(XREALComponent.XREAL_COMPONENT_DISPLAY_LEFT, near, far, ref proj);
-        Matrix4x4 view = targetCamera.worldToCameraMatrix;
-        cachedVpMatrix = proj * view;
+        UpdateCachedVpMatrix(Camera.MonoOrStereoscopicEye.Mono);
     }
 
-    void OnDisable()
+    void OnPreRender()
     {
-        if (targetCamera != null && commandBuffer != null)
+        if (targetCamera == null) return;
+        UpdateCachedVpMatrix(targetCamera.stereoActiveEye);
+    }
+
+    void UpdateCachedVpMatrix(Camera.MonoOrStereoscopicEye activeEye)
+    {
+        XREALComponent component = activeEye == Camera.MonoOrStereoscopicEye.Right
+            ? XREALComponent.XREAL_COMPONENT_DISPLAY_RIGHT
+            : XREALComponent.XREAL_COMPONENT_DISPLAY_LEFT;
+        Matrix4x4 proj = Matrix4x4.identity;
+        XREALPlugin.GetCameraProjectionMatrix(component, NearClip, FarClip, ref proj);
+
+        Matrix4x4 view = targetCamera.worldToCameraMatrix;
+        if (activeEye == Camera.MonoOrStereoscopicEye.Left)
         {
-            targetCamera.RemoveCommandBuffer(CameraEvent.AfterForwardOpaque, commandBuffer);
-            commandBuffer.Release();
-            commandBuffer = null;
+            view = targetCamera.GetStereoViewMatrix(Camera.StereoscopicEye.Left);
         }
+        else if (activeEye == Camera.MonoOrStereoscopicEye.Right)
+        {
+            view = targetCamera.GetStereoViewMatrix(Camera.StereoscopicEye.Right);
+        }
+        cachedVpMatrix = proj * view;
+        Debug.Log($"Camera pos: {targetCamera.transform.position}");
     }
 
     [AOT.MonoPInvokeCallback(typeof(RenderEventHandler))]

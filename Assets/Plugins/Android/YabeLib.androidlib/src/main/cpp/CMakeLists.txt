@@ -13,8 +13,8 @@ add_library(${PROJECT_NAME} SHARED ${sources})
 target_link_libraries(${PROJECT_NAME}
   log
   GLESv3
-  /home/watasuke/program/yabe-compositor/android-build/libyabe_compositor.a
+  /home/watasuke/program/yabe/compositor/android-build/libyabe_compositor.a
 )
 target_include_directories(${PROJECT_NAME} PUBLIC
-  /home/watasuke/program/yabe-compositor
+  /home/watasuke/program/yabe/compositor
 )

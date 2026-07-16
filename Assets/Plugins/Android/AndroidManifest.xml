@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.yabe.xreal">
+  <queries>
+    <package android:name="org.yabe.xreal_client" />
+  </queries>
+
   <application>
     <service
-    android:name="org.yabe.xreal.CompositorService"
-    android:exported="true"
-    android:enabled="true">
+      android:name="org.yabe.xreal.CompositorService"
+      android:exported="true"
+      android:enabled="true">
       <intent-filter>
         <action android:name="org.yabe.xreal.ICompositorService" />
       </intent-filter>

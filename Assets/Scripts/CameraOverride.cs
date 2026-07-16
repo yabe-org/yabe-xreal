@@ -87,8 +87,21 @@ public class CameraOverride : MonoBehaviour
         {
             view = targetCamera.GetStereoViewMatrix(Camera.StereoscopicEye.Right);
         }
+        view = BuildCompositorViewMatrix(view);
         cachedVpMatrix = proj * view;
-        Debug.Log($"Camera pos: {targetCamera.transform.position}");
+    }
+
+    // Unity/XREAL uses +Z as forward and includes the tracked eye height, while the
+    // compositor uses -Z as forward and expects its camera to remain at Y = 0.
+    private static Matrix4x4 BuildCompositorViewMatrix(Matrix4x4 unityView)
+    {
+        Matrix4x4 cameraToWorld = unityView.inverse;
+        Vector4 cameraPosition = cameraToWorld.GetColumn(3);
+        cameraPosition.y = 0.0f;
+        cameraToWorld.SetColumn(3, cameraPosition);
+
+        Matrix4x4 compositorToUnity = Matrix4x4.Scale(new Vector3(1.0f, 1.0f, -1.0f));
+        return cameraToWorld.inverse * compositorToUnity;
     }
 
     [AOT.MonoPInvokeCallback(typeof(RenderEventHandler))]

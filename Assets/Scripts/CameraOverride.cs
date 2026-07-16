@@ -22,6 +22,8 @@ public class CameraOverride : MonoBehaviour
     private Camera targetCamera;
     private Camera rightCamera;
     private StereoTargetEyeMask originalTargetEye;
+    private float trackingOriginHeight;
+    private bool hasTrackingOriginHeight;
 
     private enum EyeEvent
     {
@@ -58,6 +60,7 @@ public class CameraOverride : MonoBehaviour
         rightCamera = rightCameraObject.AddComponent<Camera>();
         rightCamera.CopyFrom(targetCamera);
         rightCamera.stereoTargetEye = StereoTargetEyeMask.Right;
+        hasTrackingOriginHeight = false;
 
         leftCommandBuffer = CreateCommandBuffer("Yabe Left Eye", EyeEvent.Left);
         rightCommandBuffer = CreateCommandBuffer("Yabe Right Eye", EyeEvent.Right);
@@ -65,9 +68,11 @@ public class CameraOverride : MonoBehaviour
         rightCamera.AddCommandBuffer(CameraEvent.AfterForwardOpaque, rightCommandBuffer);
 
         UpdateCachedVpMatrices();
+        Application.onBeforeRender += UpdateCachedVpMatrices;
     }
     void OnDisable()
     {
+        Application.onBeforeRender -= UpdateCachedVpMatrices;
         if (targetCamera != null)
         {
             targetCamera.stereoTargetEye = originalTargetEye;
@@ -86,14 +91,6 @@ public class CameraOverride : MonoBehaviour
         Debug.Log("CameraOverride OnDestroy called");
         terminate_compositor();
     }
-
-
-    void Update()
-    {
-        if (targetCamera == null) return;
-        UpdateCachedVpMatrices();
-    }
-
     private static CommandBuffer CreateCommandBuffer(string name, EyeEvent eyeEvent)
     {
         CommandBuffer buffer = new CommandBuffer();
@@ -113,8 +110,16 @@ public class CameraOverride : MonoBehaviour
 
     private void UpdateCachedVpMatrices()
     {
-        Matrix4x4 leftVp = BuildVpMatrix(targetCamera, Camera.StereoscopicEye.Left);
-        Matrix4x4 rightVp = BuildVpMatrix(rightCamera, Camera.StereoscopicEye.Right);
+        Matrix4x4 leftView = targetCamera.GetStereoViewMatrix(Camera.StereoscopicEye.Left);
+        Matrix4x4 rightView = rightCamera.GetStereoViewMatrix(Camera.StereoscopicEye.Right);
+        if (!hasTrackingOriginHeight)
+        {
+            trackingOriginHeight = leftView.inverse.GetColumn(3).y;
+            hasTrackingOriginHeight = true;
+        }
+
+        Matrix4x4 leftVp = BuildVpMatrix(leftView, Camera.StereoscopicEye.Left, trackingOriginHeight);
+        Matrix4x4 rightVp = BuildVpMatrix(rightView, Camera.StereoscopicEye.Right, trackingOriginHeight);
         lock (vpMatrixLock)
         {
             cachedVpMatrices[(int)EyeEvent.Left] = leftVp;
@@ -122,7 +127,10 @@ public class CameraOverride : MonoBehaviour
         }
     }
 
-    private static Matrix4x4 BuildVpMatrix(Camera camera, Camera.StereoscopicEye eye)
+    private static Matrix4x4 BuildVpMatrix(
+        Matrix4x4 view,
+        Camera.StereoscopicEye eye,
+        float trackingOriginHeight)
     {
         XREALComponent component = eye == Camera.StereoscopicEye.Right
             ? XREALComponent.XREAL_COMPONENT_DISPLAY_RIGHT
@@ -130,18 +138,17 @@ public class CameraOverride : MonoBehaviour
         Matrix4x4 proj = Matrix4x4.identity;
         XREALPlugin.GetCameraProjectionMatrix(component, NearClip, FarClip, ref proj);
 
-        Matrix4x4 view = camera.GetStereoViewMatrix(eye);
-        view = BuildCompositorViewMatrix(view);
+        view = BuildCompositorViewMatrix(view, trackingOriginHeight);
         return proj * view;
     }
 
     // Unity/XREAL uses +Z as forward and includes the tracked eye height, while the
-    // compositor uses -Z as forward and expects its camera to remain at Y = 0.
-    private static Matrix4x4 BuildCompositorViewMatrix(Matrix4x4 unityView)
+    // compositor uses -Z as forward and treats the initial eye height as Y = 0.
+    private static Matrix4x4 BuildCompositorViewMatrix(Matrix4x4 unityView, float trackingOriginHeight)
     {
         Matrix4x4 cameraToWorld = unityView.inverse;
         Vector4 cameraPosition = cameraToWorld.GetColumn(3);
-        cameraPosition.y = 0.0f;
+        cameraPosition.y -= trackingOriginHeight;
         cameraToWorld.SetColumn(3, cameraPosition);
 
         Matrix4x4 compositorToUnity = Matrix4x4.Scale(new Vector3(1.0f, 1.0f, -1.0f));

@@ -14,6 +14,7 @@ $(TARGET): $(XREAL_SDK)
 		-projectPath . \
 		-activeBuildProfile "Assets/Settings/Build Profiles/Android.asset" \
 		-build $(TARGET)
+	@echo # after build. shell does not accept input, so reflesh it by this
 
 # do not set TARGET as a dependency to avoid building
 install:

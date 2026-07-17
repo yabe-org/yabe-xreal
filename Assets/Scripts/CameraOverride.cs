@@ -106,12 +106,13 @@ public class CameraOverride : MonoBehaviour
         Matrix4x4 rightView = rightCamera.GetStereoViewMatrix(Camera.StereoscopicEye.Right);
         if (!hasTrackingOriginHeight)
         {
-            trackingOriginHeight = leftView.inverse.GetColumn(3).y;
+          // sometimes view position becomes 0, so set fallback value to 1.42f (in my environment, it tends to be this value)
+            trackingOriginHeight = Math.Max(1.42f, leftView.inverse.GetColumn(3).y);
             hasTrackingOriginHeight = true;
         }
 
-        Matrix4x4 leftVp = BuildVpMatrix(leftView, Camera.StereoscopicEye.Left, trackingOriginHeight);
-        Matrix4x4 rightVp = BuildVpMatrix(rightView, Camera.StereoscopicEye.Right, trackingOriginHeight);
+        Matrix4x4 leftVp = BuildVpMatrix(leftView, Camera.StereoscopicEye.Left);
+        Matrix4x4 rightVp = BuildVpMatrix(rightView, Camera.StereoscopicEye.Right);
         lock (vpMatrixLock)
         {
             cachedVpMatrices[(int)EyeEvent.Left] = leftVp;
@@ -119,10 +120,7 @@ public class CameraOverride : MonoBehaviour
         }
     }
 
-    private static Matrix4x4 BuildVpMatrix(
-        Matrix4x4 view,
-        Camera.StereoscopicEye eye,
-        float trackingOriginHeight)
+    private Matrix4x4 BuildVpMatrix(Matrix4x4 view, Camera.StereoscopicEye eye)
     {
         XREALComponent component = eye == Camera.StereoscopicEye.Right
             ? XREALComponent.XREAL_COMPONENT_DISPLAY_RIGHT
@@ -130,13 +128,13 @@ public class CameraOverride : MonoBehaviour
         Matrix4x4 proj = Matrix4x4.identity;
         XREALPlugin.GetCameraProjectionMatrix(component, NearClip, FarClip, ref proj);
 
-        view = BuildCompositorViewMatrix(view, trackingOriginHeight);
+        view = BuildCompositorViewMatrix(view);
         return proj * view;
     }
 
     // Unity/XREAL uses +Z as forward and includes the tracked eye height, while the
     // compositor uses -Z as forward and treats the initial eye height as Y = 0.
-    private static Matrix4x4 BuildCompositorViewMatrix(Matrix4x4 unityView, float trackingOriginHeight)
+    private Matrix4x4 BuildCompositorViewMatrix(Matrix4x4 unityView)
     {
         Matrix4x4 cameraToWorld = unityView.inverse;
         Vector4 cameraPosition = cameraToWorld.GetColumn(3);

@@ -2,6 +2,7 @@ package org.yabe.xreal
 
 import android.app.Service
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
@@ -21,6 +22,7 @@ class CompositorService : Service() {
     private var compositorService: ICompositorService? = null
     private var isBoundToClientService = false
     private var hasNotifiedCompositorReady = false
+    private var isShuttingDown = false
     private val mBinder = object : ICompositorService.Stub() {
         override fun isCompositorReady(): Boolean {
             return isCompositorRunning()
@@ -62,7 +64,7 @@ class CompositorService : Service() {
     private fun bindToCompositorService() {
         val intent = Intent()
         intent.component = ComponentName("org.yabe.xreal_client", "org.yabe.xreal_client.CompositorService")
-        val success = bindService(intent, serviceConnection, 0)
+        val success = bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         isBoundToClientService = success
         if (success) {
             Log.d(TAG, "bindService() succeeded")
@@ -78,6 +80,11 @@ class CompositorService : Service() {
         bindToCompositorService()
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // The compositor must not be recreated after this task and its process are gone
+        return START_NOT_STICKY
+    }
+
     override fun onBind(intent: Intent?): IBinder {
         Log.d(TAG, "CompositorService bound by intent: $intent")
         return mBinder
@@ -88,14 +95,30 @@ class CompositorService : Service() {
         return super.onUnbind(intent)
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.d(TAG, "CompositorService task removed")
+        shutdown()
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         Log.d(TAG, "CompositorService onDestroy")
+        shutdown()
+        super.onDestroy()
+    }
+
+    private fun shutdown() {
+        if (isShuttingDown) {
+            return
+        }
+        isShuttingDown = true
         if (isBoundToClientService) {
             unbindService(serviceConnection)
             isBoundToClientService = false
         }
-        super.onDestroy()
-        terminateCompositor();
+        compositorService = null
+        terminateCompositor()
     }
 
     private fun startCompositorIfNeeded() {

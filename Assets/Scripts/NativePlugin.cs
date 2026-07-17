@@ -19,6 +19,7 @@ internal static class NativePlugin
 
     internal const uint PointerButtonLeft = 0x110;
     internal const uint PointerButtonRight = 0x111;
+    internal const uint PointerButtonMiddle = 0x112;
     [DllImport(LibraryName)]
     internal static extern void yabe_compositor_button(
         uint button,

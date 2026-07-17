@@ -1,24 +1,114 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
 using UnityEngine.InputSystem.EnhancedTouch;
 using static UnityEngine.InputSystem.EnhancedTouch.Touch;
 using static UnityEngine.InputSystem.TouchPhase;
 
 public class PointerInput : MonoBehaviour
 {
+  Coroutine mouseCaptureCoroutine;
+
   void OnEnable()
   {
     EnhancedTouchSupport.Enable();
+    RequestMouseCapture();
   }
 
   void OnDisable()
   {
+    if (this.mouseCaptureCoroutine != null)
+    {
+      StopCoroutine(this.mouseCaptureCoroutine);
+      this.mouseCaptureCoroutine = null;
+    }
+    Android.SetMouseCapture(false);
     EnhancedTouchSupport.Disable();
+  }
+
+  void OnApplicationFocus(bool hasFocus)
+  {
+    if (!isActiveAndEnabled)
+    {
+      return;
+    }
+    if (!hasFocus)
+    {
+      Android.SetMouseCapture(false);
+      return;
+    }
+    RequestMouseCapture();
+  }
+
+  void RequestMouseCapture()
+  {
+    if (this.mouseCaptureCoroutine != null)
+    {
+      StopCoroutine(this.mouseCaptureCoroutine);
+    }
+    this.mouseCaptureCoroutine = StartCoroutine(CaptureMouseAfterFocus());
+  }
+
+  IEnumerator CaptureMouseAfterFocus()
+  {
+    yield return null;
+    this.mouseCaptureCoroutine = null;
+    if (!isActiveAndEnabled || !Application.isFocused)
+    {
+      yield break;
+    }
+    Android.SetMouseCapture(true);
   }
 
   void Update()
   {
     HandleTap();
+    HandleMouse();
+  }
+
+  const float MouseMovementDeltaMultiplier = 0.002F;
+  const float MouseScrollDeltaMultiplier = 1.0F;
+  void HandleMouse()
+  {
+    var mouse = Mouse.current;
+    if (mouse == null)
+    {
+      return;
+    }
+
+    var movement = mouse.delta.ReadValue() * MouseMovementDeltaMultiplier;
+    if (movement != Vector2.zero)
+    {
+      NativePlugin.yabe_compositor_move_pointer(movement.x, movement.y);
+    }
+
+    var scroll = mouse.scroll.ReadValue() * MouseScrollDeltaMultiplier;
+    if (scroll.y != 0.0F)
+    {
+      NativePlugin.yabe_compositor_axis(0, scroll.y);
+    }
+    if (scroll.x != 0.0F)
+    {
+      NativePlugin.yabe_compositor_axis(1, scroll.x);
+    }
+
+    HandleMouseButton(mouse.leftButton, NativePlugin.PointerButtonLeft);
+    HandleMouseButton(mouse.rightButton, NativePlugin.PointerButtonRight);
+    HandleMouseButton(mouse.middleButton, NativePlugin.PointerButtonMiddle);
+  }
+
+  void HandleMouseButton(ButtonControl button, uint code)
+  {
+    if (button.wasPressedThisFrame)
+    {
+      NativePlugin.yabe_compositor_button(code, true);
+      return;
+    }
+    if (button.wasReleasedThisFrame)
+    {
+      NativePlugin.yabe_compositor_button(code, false);
+    }
   }
 
   enum TapStatus
@@ -31,8 +121,8 @@ public class PointerInput : MonoBehaviour
     Scroll,
   }
   TapStatus tapState = TapStatus.Idle;
-  const float MovementDeltaMultiplier = 0.0008F;
-  const float ScrollDeltaMultiplier = 0.002F;
+  const float TapMovementDeltaMultiplier = 0.0008F;
+  const float TapScrollDeltaMultiplier = 0.006F;
   const float TapThresholdSec = 0.2F;
   float passedSecFromBegan = 0.0F;
   void HandleTap()
@@ -125,7 +215,7 @@ public class PointerInput : MonoBehaviour
       case TapStatus.MoveOnly:
         if (phase == Moved)
         {
-          var v = deltaPosition * MovementDeltaMultiplier;
+          var v = deltaPosition * TapMovementDeltaMultiplier;
           NativePlugin.yabe_compositor_move_pointer(v.x, v.y);
         }
         else if (phase == Ended)
@@ -140,7 +230,7 @@ public class PointerInput : MonoBehaviour
       case TapStatus.Drag:
         if (phase == Moved)
         {
-          var v = deltaPosition * MovementDeltaMultiplier;
+          var v = deltaPosition * TapMovementDeltaMultiplier;
           NativePlugin.yabe_compositor_move_pointer(v.x, v.y);
         }
         if (phase == Ended)
@@ -155,7 +245,7 @@ public class PointerInput : MonoBehaviour
         {
           NativePlugin.yabe_compositor_axis(
             0,
-            deltaPosition.sqrMagnitude * ScrollDeltaMultiplier * (deltaPosition.y < 0 ? -1.0F : 1.0F));
+            deltaPosition.sqrMagnitude * TapScrollDeltaMultiplier * (deltaPosition.y < 0 ? -1.0F : 1.0F));
         }
         else if (touches.Count < 2)
         {

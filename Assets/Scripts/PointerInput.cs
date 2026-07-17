@@ -32,6 +32,7 @@ public class PointerInput : MonoBehaviour
   }
   TapStatus tapState = TapStatus.Idle;
   const float MovementDeltaMultiplier = 0.0008F;
+  const float ScrollDeltaMultiplier = 0.002F;
   const float TapThresholdSec = 0.2F;
   float passedSecFromBegan = 0.0F;
   void HandleTap()
@@ -154,7 +155,7 @@ public class PointerInput : MonoBehaviour
         {
           NativePlugin.yabe_compositor_axis(
             0,
-            deltaPosition.sqrMagnitude * (deltaPosition.y < 0 ? -1.0F : 1.0F));
+            deltaPosition.sqrMagnitude * ScrollDeltaMultiplier * (deltaPosition.y < 0 ? -1.0F : 1.0F));
         }
         else if (touches.Count < 2)
         {

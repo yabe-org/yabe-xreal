@@ -6,14 +6,6 @@ using System.Runtime.InteropServices;
 
 public class CameraOverride : MonoBehaviour
 {
-    private const string LIBRARY_NAME = "compositor";
-    [DllImport(LIBRARY_NAME)]
-    private static extern void yabe_compositor_draw(ref Matrix4x4 pv_mat);
-    [DllImport(LIBRARY_NAME)]
-    private static extern bool is_compositor_running();
-    [DllImport(LIBRARY_NAME)]
-    private static extern void terminate_compositor();
-
     private const float NearClip = 0.002f;
     private const float FarClip = 100.0f;
 
@@ -84,12 +76,12 @@ public class CameraOverride : MonoBehaviour
             Destroy(rightCamera.gameObject);
             rightCamera = null;
         }
-        terminate_compositor();
+        NativePlugin.terminate_compositor();
     }
     void OnDestroy()
     {
         Debug.Log("CameraOverride OnDestroy called");
-        terminate_compositor();
+        NativePlugin.terminate_compositor();
     }
     private static CommandBuffer CreateCommandBuffer(string name, EyeEvent eyeEvent)
     {
@@ -158,14 +150,14 @@ public class CameraOverride : MonoBehaviour
     [AOT.MonoPInvokeCallback(typeof(RenderEventHandler))]
     static void HandlePluginEvent(int eventID)
     {
-        if (!is_compositor_running() || (eventID != (int)EyeEvent.Left && eventID != (int)EyeEvent.Right))
+        if (!NativePlugin.is_compositor_running() || (eventID != (int)EyeEvent.Left && eventID != (int)EyeEvent.Right))
         {
             return;
         }
         try {
             lock (vpMatrixLock)
             {
-                yabe_compositor_draw(ref cachedVpMatrices[eventID]);
+                NativePlugin.yabe_compositor_draw(ref cachedVpMatrices[eventID]);
             }
         } catch (Exception e) {
             Debug.LogError("Error calling yabe_compositor_draw: " + e.Message);

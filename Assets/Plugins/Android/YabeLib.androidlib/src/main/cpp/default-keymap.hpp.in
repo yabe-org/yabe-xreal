@@ -1,0 +1,3 @@
+#pragma once
+
+constexpr char kDefaultKeymap[] = R"yabe_xkb(@DEFAULT_KEYMAP@)yabe_xkb";

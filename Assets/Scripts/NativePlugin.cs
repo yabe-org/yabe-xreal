@@ -29,20 +29,13 @@ internal static class NativePlugin
     internal static extern void yabe_compositor_axis(uint axis, float value);
 
     [DllImport(LibraryName)]
-    internal static extern void yabe_compositor_key(
+    internal static extern bool initialize_keyboard();
+
+    [DllImport(LibraryName)]
+    internal static extern void destroy_keyboard();
+
+    [DllImport(LibraryName)]
+    internal static extern void send_keyboard_key(
         uint key,
         [MarshalAs(UnmanagedType.I1)] bool isPressed);
-
-    [DllImport(LibraryName)]
-    internal static extern void yabe_compositor_keymap(uint format, int fd, uint size);
-
-    [DllImport(LibraryName)]
-    internal static extern void yabe_compositor_repeat_info(int rate, int delay);
-
-    [DllImport(LibraryName)]
-    internal static extern void yabe_compositor_modifiers(
-        uint modsDepressed,
-        uint modsLatched,
-        uint modsLocked,
-        uint group);
 }

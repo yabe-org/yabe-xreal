@@ -202,6 +202,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1940629961}
   - component: {fileID: 1940629960}
+  - component: {fileID: 1940629962}
   m_Layer: 0
   m_Name: InputHandler
   m_TagString: Untagged
@@ -221,6 +222,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f69b4fe186d8b2eb18b4955abcc2c82e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &1940629962
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1940629959}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 57b84cb4d74542f58d9fb63a501c6557, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
 --- !u!4 &1940629961
 Transform:
   m_ObjectHideFlags: 0

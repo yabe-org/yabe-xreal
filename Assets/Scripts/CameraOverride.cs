@@ -6,6 +6,8 @@ using System.Runtime.InteropServices;
 
 public class CameraOverride : MonoBehaviour
 {
+    [SerializeField] StreamServer streamServer;
+
     private const float NearClip = 0.002f;
     private const float FarClip = 100.0f;
 
@@ -185,4 +187,38 @@ public class CameraOverride : MonoBehaviour
         }
 #endif
     }
+
+  enum Status
+  {
+    None, CaptureRequested, Streaming,
+  }
+  Status status;
+  Status prevStatus;
+  public void RequestCapture()
+  {
+    this.prevStatus = this.status;
+    this.status = Status.CaptureRequested;
+  }
+  public void StartStreaming()
+  {
+    this.status = Status.Streaming;
+  }
+  public void StopStreaming()
+  {
+    this.status = Status.None;
+  }
+  void OnRenderImage(RenderTexture src, RenderTexture dst)
+  {
+    Graphics.Blit(src, dst);
+    switch (this.status)
+    {
+      case Status.CaptureRequested:
+        this.status = this.prevStatus;
+        AsyncGPUReadback.Request(src, 0, ScreenshotHandler.HandleSaveImage);
+        break;
+      case Status.Streaming:
+        AsyncGPUReadback.Request(src, 0, this.streamServer.HandleGetCurrentFrame);
+        break;
+    }
+  }
 }

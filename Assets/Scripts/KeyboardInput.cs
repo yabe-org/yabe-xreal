@@ -4,18 +4,11 @@ using UnityEngine.InputSystem;
 
 public class KeyboardInput : MonoBehaviour
 {
-  bool keyboardInitialized;
   readonly HashSet<uint> pressedKeys = new();
 
   void OnDisable()
   {
     ReleasePressedKeys();
-    if (!this.keyboardInitialized)
-    {
-      return;
-    }
-    NativePlugin.destroy_keyboard();
-    this.keyboardInitialized = false;
   }
 
   void OnApplicationFocus(bool hasFocus)
@@ -28,7 +21,7 @@ public class KeyboardInput : MonoBehaviour
 
   void ReleasePressedKeys()
   {
-    if (this.keyboardInitialized && NativePlugin.is_compositor_running())
+    if (NativePlugin.is_compositor_running())
     {
       foreach (var key in this.pressedKeys)
       {
@@ -43,20 +36,7 @@ public class KeyboardInput : MonoBehaviour
     if (!NativePlugin.is_compositor_running())
     {
       this.pressedKeys.Clear();
-      if (this.keyboardInitialized)
-      {
-        NativePlugin.destroy_keyboard();
-        this.keyboardInitialized = false;
-      }
       return;
-    }
-    if (!this.keyboardInitialized)
-    {
-      this.keyboardInitialized = NativePlugin.initialize_keyboard();
-      if (!this.keyboardInitialized)
-      {
-        return;
-      }
     }
 
     var keyboard = Keyboard.current;

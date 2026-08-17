@@ -19,6 +19,7 @@ class CompositorService : Service() {
         }
     }
 
+    @Volatile
     private var compositorService: ICompositorService? = null
     private var isBoundToClientService = false
     private var hasNotifiedCompositorReady = false
@@ -45,11 +46,23 @@ class CompositorService : Service() {
             Log.d(TAG, "Received file descriptor: $fd")
             addClientFd(fd)
         }
+
+        override fun createKeymap(
+            rules: String?,
+            model: String?,
+            layout: String?,
+            variant: String?,
+            options: String?
+        ): String? {
+            Log.e(TAG, "Unexpected call from client: createKeymap()")
+            return null
+        }
     }
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             Log.d(TAG, "CompositorService connected")
             compositorService = ICompositorService.Stub.asInterface(service)
+            startCompositorIfNeeded()
             notifyClientIfReady()
         }
 
@@ -76,7 +89,6 @@ class CompositorService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "CompositorService onCreate")
-        startCompositorIfNeeded()
         bindToCompositorService()
     }
 
@@ -137,6 +149,22 @@ class CompositorService : Service() {
             hasNotifiedCompositorReady = true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to notify that the compositor is ready", e)
+        }
+    }
+
+    private fun createKeymap(
+        rules: String,
+        model: String,
+        layout: String,
+        variant: String,
+        options: String
+    ): String? {
+        val service = compositorService ?: return null
+        return try {
+            service.createKeymap(rules, model, layout, variant, options)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create keymap", e)
+            null
         }
     }
 

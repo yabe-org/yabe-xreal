@@ -24,6 +24,7 @@ class CompositorService : Service() {
     private var isBoundToClientService = false
     private var hasNotifiedCompositorReady = false
     private var isShuttingDown = false
+    private var pendingConfigText: String? = null
     private val mBinder = object : ICompositorService.Stub() {
         override fun isCompositorReady(): Boolean {
             return isCompositorRunning()
@@ -57,12 +58,30 @@ class CompositorService : Service() {
             Log.e(TAG, "Unexpected call from client: createKeymap()")
             return null
         }
+
+        override fun exec(argv: Array<out String>?): Int {
+            Log.e(TAG, "Unexpected call from client: exec()")
+            return -1
+        }
+
+        override fun setConfigText(configText: String?) {
+            if (configText == null) {
+                Log.e(TAG, "Received null config contents")
+                return
+            }
+            pendingConfigText = configText
+            if (compositorService == null) {
+                return
+            }
+            startCompositorIfNeeded(configText)
+            notifyClientIfReady()
+        }
     }
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             Log.d(TAG, "CompositorService connected")
             compositorService = ICompositorService.Stub.asInterface(service)
-            startCompositorIfNeeded()
+            pendingConfigText?.let { startCompositorIfNeeded(it) }
             notifyClientIfReady()
         }
 
@@ -133,11 +152,11 @@ class CompositorService : Service() {
         terminateCompositor()
     }
 
-    private fun startCompositorIfNeeded() {
+    private fun startCompositorIfNeeded(configText: String) {
         if (isCompositorRunning()) {
             return
         }
-        startCompositor()
+        startCompositor(configText)
     }
 
     private fun notifyClientIfReady() {
@@ -168,7 +187,17 @@ class CompositorService : Service() {
         }
     }
 
-    private external fun startCompositor()
+    private fun exec(argv: Array<String>): Int {
+        val service = compositorService ?: return -1
+        return try {
+            service.exec(argv)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to execute command", e)
+            -1
+        }
+    }
+
+    private external fun startCompositor(configText: String)
     private external fun terminateCompositor()
     private external fun addClientFd(fd: Int)
     private external fun isCompositorRunning(): Boolean

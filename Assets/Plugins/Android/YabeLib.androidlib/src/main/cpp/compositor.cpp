@@ -22,6 +22,63 @@ JavaVM*          java_vm_                   = nullptr;
 jobject          compositor_service_        = nullptr;
 std::string      keymap_str_;
 
+int exec_in_andlify(const char* const * argv) {
+  JNIEnv* env                     = nullptr;
+  bool    attached_current_thread = false;
+  if (java_vm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) ==
+      JNI_EDETACHED) {
+    if (java_vm_->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+      LOG_ERR("Failed to attach compositor thread to JVM");
+      return -1;
+    }
+    attached_current_thread = true;
+  }
+
+  auto* service_class = env->GetObjectClass(compositor_service_);
+  auto  exec_method =
+      env->GetMethodID(service_class, "exec", "([Ljava/lang/String;)I");
+  if (!exec_method) {
+    env->ExceptionClear();
+    env->DeleteLocalRef(service_class);
+    if (attached_current_thread) {
+      java_vm_->DetachCurrentThread();
+    }
+    LOG_ERR("Failed to find CompositorService.exec()");
+    return -1;
+  }
+
+  size_t argc = 0;
+  while (argv[argc]) {
+    ++argc;
+  }
+  auto* string_class = env->FindClass("java/lang/String");
+  auto* args         = env->NewObjectArray(argc, string_class, nullptr);
+  for (size_t i = 0; i < argc; ++i) {
+    auto* arg = env->NewStringUTF(argv[i]);
+    env->SetObjectArrayElement(args, i, arg);
+    env->DeleteLocalRef(arg);
+  }
+  const auto result =
+      env->CallIntMethod(compositor_service_, exec_method, args);
+  env->DeleteLocalRef(args);
+  env->DeleteLocalRef(string_class);
+  env->DeleteLocalRef(service_class);
+
+  if (env->ExceptionCheck()) {
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+    LOG_ERR("Failed to execute command in xreal-client");
+    if (attached_current_thread) {
+      java_vm_->DetachCurrentThread();
+    }
+    return -1;
+  }
+  if (attached_current_thread) {
+    java_vm_->DetachCurrentThread();
+  }
+  return result;
+}
+
 const char* create_keymap(const char* rules, const char* model,
     const char* layout, const char* variant, const char* options) {
   keymap_str_.clear();
@@ -101,16 +158,20 @@ void terminate_compositor() {
 }
 
 JNIEXPORT void JNICALL Java_org_yabe_xreal_CompositorService_startCompositor(
-    JNIEnv* env, jobject obj) {
+    JNIEnv* env, jobject obj, jstring config_text) {
   env->GetJavaVM(&java_vm_);
-  compositor_service_ = env->NewGlobalRef(obj);
+  compositor_service_      = env->NewGlobalRef(obj);
+  const char* config_chars = env->GetStringUTFChars(config_text, nullptr);
+  std::string config(config_chars);
+  env->ReleaseStringUTFChars(config_text, config_chars);
   is_compositor_running_.store(true);
-  compositor_thread = std::thread([]() {
+  compositor_thread = std::thread([config = std::move(config)]() {
     yabe_compositor_init(
         [](const char* s) {
           __android_log_print(ANDROID_LOG_DEBUG, "YabeCompositor", "%s", s);
         },
-        create_keymap);
+        create_keymap, exec_in_andlify);
+    yabe_compositor_load_config(config.c_str());
     is_compositor_initialized_.store(true);
     LOG_DBG("compositor start");
     yabe_compositor_start();

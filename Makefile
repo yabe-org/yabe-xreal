@@ -6,7 +6,7 @@ UNITY_VERSION    ?= 6000.0.77f1
 UNITY_EXECUTABLE ?= $(HOME)/Unity/Hub/Editor/$(UNITY_VERSION)/Editor/Unity
 XREAL_SDK        := Packages/com.xreal.xr.tgz
 
-.PHONY: all apk debug-apk install unity log
+.PHONY: all apk release-apk install release-install unity log
 
 all: apk install
 
@@ -14,17 +14,16 @@ apk: $(XREAL_SDK)
 	export UNITY_VERSION=$(UNITY_VERSION) && \
 	$(UNITY_EXECUTABLE) -quit -batchmode -nographics \
 		-projectPath . \
-		-activeBuildProfile "$(RELEASE_PROFILE)" \
-		-build $(RELEASE_TARGET)
-	@echo # after build. shell does not accept input, so reflesh it by this
-
-debug-apk: $(XREAL_SDK)
-	export UNITY_VERSION=$(UNITY_VERSION) && \
-	$(UNITY_EXECUTABLE) -quit -batchmode -nographics \
-		-projectPath . \
 		-activeBuildProfile "$(DEBUG_PROFILE)" \
 		-build $(DEBUG_TARGET)
 	@echo
+release-apk: $(XREAL_SDK)
+	export UNITY_VERSION=$(UNITY_VERSION) && \
+	$(UNITY_EXECUTABLE) -quit -batchmode -nographics \
+		-projectPath . \
+		-activeBuildProfile "$(RELEASE_PROFILE)" \
+		-build $(RELEASE_TARGET)
+	@echo # after build. shell does not accept input, so reflesh it by this
 
 # do not set TARGET as a dependency to avoid building
 install:

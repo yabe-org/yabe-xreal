@@ -25,8 +25,13 @@ public class CameraOverride : MonoBehaviour
         Right = 1,
     }
 
-    private static readonly object vpMatrixLock = new object();
-    private static readonly Matrix4x4[] cachedVpMatrices =
+    private static readonly object matrixLock = new object();
+    private static readonly Matrix4x4[] cachedProjectionMatrices =
+    {
+        Matrix4x4.identity,
+        Matrix4x4.identity,
+    };
+    private static readonly Matrix4x4[] cachedViewMatrices =
     {
         Matrix4x4.identity,
         Matrix4x4.identity,
@@ -61,12 +66,12 @@ public class CameraOverride : MonoBehaviour
         targetCamera.AddCommandBuffer(CameraEvent.AfterForwardOpaque, leftCommandBuffer);
         rightCamera.AddCommandBuffer(CameraEvent.AfterForwardOpaque, rightCommandBuffer);
 
-        UpdateCachedVpMatrices();
-        Application.onBeforeRender += UpdateCachedVpMatrices;
+        UpdateCachedMatrices();
+        Application.onBeforeRender += UpdateCachedMatrices;
     }
     void OnDisable()
     {
-        Application.onBeforeRender -= UpdateCachedVpMatrices;
+        Application.onBeforeRender -= UpdateCachedMatrices;
         if (targetCamera != null)
         {
             targetCamera.stereoTargetEye = originalTargetEye;
@@ -102,7 +107,7 @@ public class CameraOverride : MonoBehaviour
         buffer = null;
     }
 
-    private void UpdateCachedVpMatrices()
+    private void UpdateCachedMatrices()
     {
         Matrix4x4 leftView = targetCamera.GetStereoViewMatrix(Camera.StereoscopicEye.Left);
         Matrix4x4 rightView = rightCamera.GetStereoViewMatrix(Camera.StereoscopicEye.Right);
@@ -113,25 +118,28 @@ public class CameraOverride : MonoBehaviour
             hasTrackingOriginHeight = true;
         }
 
-        Matrix4x4 leftVp = BuildVpMatrix(leftView, Camera.StereoscopicEye.Left);
-        Matrix4x4 rightVp = BuildVpMatrix(rightView, Camera.StereoscopicEye.Right);
-        lock (vpMatrixLock)
+        Matrix4x4 leftProjection = Matrix4x4.identity;
+        Matrix4x4 rightProjection = Matrix4x4.identity;
+        XREALPlugin.GetCameraProjectionMatrix(
+            XREALComponent.XREAL_COMPONENT_DISPLAY_LEFT,
+            NearClip,
+            FarClip,
+            ref leftProjection);
+        XREALPlugin.GetCameraProjectionMatrix(
+            XREALComponent.XREAL_COMPONENT_DISPLAY_RIGHT,
+            NearClip,
+            FarClip,
+            ref rightProjection);
+
+        leftView = BuildCompositorViewMatrix(leftView);
+        rightView = BuildCompositorViewMatrix(rightView);
+        lock (matrixLock)
         {
-            cachedVpMatrices[(int)EyeEvent.Left] = leftVp;
-            cachedVpMatrices[(int)EyeEvent.Right] = rightVp;
+            cachedProjectionMatrices[(int)EyeEvent.Left] = leftProjection;
+            cachedProjectionMatrices[(int)EyeEvent.Right] = rightProjection;
+            cachedViewMatrices[(int)EyeEvent.Left] = leftView;
+            cachedViewMatrices[(int)EyeEvent.Right] = rightView;
         }
-    }
-
-    private Matrix4x4 BuildVpMatrix(Matrix4x4 view, Camera.StereoscopicEye eye)
-    {
-        XREALComponent component = eye == Camera.StereoscopicEye.Right
-            ? XREALComponent.XREAL_COMPONENT_DISPLAY_RIGHT
-            : XREALComponent.XREAL_COMPONENT_DISPLAY_LEFT;
-        Matrix4x4 proj = Matrix4x4.identity;
-        XREALPlugin.GetCameraProjectionMatrix(component, NearClip, FarClip, ref proj);
-
-        view = BuildCompositorViewMatrix(view);
-        return proj * view;
     }
 
     // Unity/XREAL uses +Z as forward and includes the tracked eye height, while the
@@ -155,9 +163,11 @@ public class CameraOverride : MonoBehaviour
             return;
         }
         try {
-            lock (vpMatrixLock)
+            lock (matrixLock)
             {
-                NativePlugin.yabe_compositor_draw(ref cachedVpMatrices[eventID]);
+                NativePlugin.yabe_compositor_draw(
+                    ref cachedProjectionMatrices[eventID],
+                    ref cachedViewMatrices[eventID]);
             }
         } catch (Exception e) {
             Debug.LogError("Error calling yabe_compositor_draw: " + e.Message);

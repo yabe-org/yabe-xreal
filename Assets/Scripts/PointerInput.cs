@@ -84,11 +84,11 @@ public class PointerInput : MonoBehaviour
     }
 
     var scroll = mouse.scroll.ReadValue() * MouseScrollDeltaMultiplier;
-    if (scroll.y != 0.0F)
+    if (movement == Vector2.zero && scroll.y != 0.0F)
     {
       NativePlugin.yabe_compositor_axis(0, scroll.y);
     }
-    if (scroll.x != 0.0F)
+    if (movement == Vector2.zero && scroll.x != 0.0F)
     {
       NativePlugin.yabe_compositor_axis(1, scroll.x);
     }

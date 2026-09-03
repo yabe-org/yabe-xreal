@@ -29,8 +29,13 @@ class CompositorService : Service() {
     private val binder = object : ICompositorService.Stub() {
         override fun isCompositorReady() = isCompositorRunning()
 
-        override fun notifyCompositorReady() {
-            Log.e(TAG, "Unexpected call from client: notifyCompositorReady()")
+        override fun setConfigText(configText: String?) {
+            if (configText == null) {
+                Log.e(TAG, "Received null config contents")
+                return
+            }
+            pendingConfigText = configText
+            startAndNotifyIfPossible()
         }
 
         override fun addClientFd(pfd: ParcelFileDescriptor?) {
@@ -45,6 +50,10 @@ class CompositorService : Service() {
             val fd = pfd.detachFd()
             Log.d(TAG, "Received file descriptor: $fd")
             addClientFd(fd)
+        }
+
+        override fun notifyCompositorReady() {
+            Log.e(TAG, "Unexpected call from client: notifyCompositorReady()")
         }
 
         override fun createKeymap(
@@ -63,14 +72,6 @@ class CompositorService : Service() {
             return -1
         }
 
-        override fun setConfigText(configText: String?) {
-            if (configText == null) {
-                Log.e(TAG, "Received null config contents")
-                return
-            }
-            pendingConfigText = configText
-            startAndNotifyIfPossible()
-        }
     }
 
     private val serviceConnection = object : ServiceConnection {

@@ -5,6 +5,7 @@
 /[Pp]ackages/*.tgz
 *_DoNotShip/
 /.utmp/
+/.clangd-build/
 
 # from https://github.com/github/gitignore/blob/main/Unity.gitignore
 /[Ll]ibrary/

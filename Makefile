@@ -4,9 +4,12 @@ DEBUG_PROFILE    := Assets/Settings/Build Profiles/AndroidDevelopment.asset
 RELEASE_PROFILE  := Assets/Settings/Build Profiles/Android.asset
 UNITY_VERSION    ?= 6000.0.77f1
 UNITY_EXECUTABLE ?= $(HOME)/Unity/Hub/Editor/$(UNITY_VERSION)/Editor/Unity
+UNITY_ANDROID_NDK ?= $(HOME)/Unity/Hub/Editor/$(UNITY_VERSION)/Editor/Data/PlaybackEngines/AndroidPlayer/NDK
 XREAL_SDK        := Packages/com.xreal.xr.tgz
+NATIVE_SOURCE    := Assets/Plugins/Android/YabeLib.androidlib/src/main/cpp
+CLANGD_BUILD     := .clangd-build
 
-.PHONY: all apk release-apk install release-install unity log
+.PHONY: all apk release-apk install release-install unity log clangd
 
 all: apk install
 
@@ -43,3 +46,10 @@ logger:
 	adb logcat -c && clear && adb logcat -s DEBUG YabeXreal YabeCompositor Unity XREAL
 loggest:
 	adb logcat -c && clear && adb logcat
+
+clangd:
+	cmake -S $(NATIVE_SOURCE) -B $(CLANGD_BUILD) \
+		-DCMAKE_TOOLCHAIN_FILE=$(UNITY_ANDROID_NDK)/build/cmake/android.toolchain.cmake \
+		-DANDROID_ABI=arm64-v8a \
+		-DANDROID_PLATFORM=android-31 \
+		-DCMAKE_BUILD_TYPE=Debug

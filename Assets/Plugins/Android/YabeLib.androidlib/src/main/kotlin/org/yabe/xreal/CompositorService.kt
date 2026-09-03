@@ -8,11 +8,12 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import org.yabe.xreal.ICompositorService
 
 class CompositorService : Service() {
     companion object {
         private const val TAG = "YabeXreal"
+        private const val CLIENT_PACKAGE = "org.yabe.xreal_client"
+        private const val CLIENT_SERVICE = "$CLIENT_PACKAGE.CompositorService"
 
         init {
             System.loadLibrary("compositor")
@@ -20,15 +21,13 @@ class CompositorService : Service() {
     }
 
     @Volatile
-    private var compositorService: ICompositorService? = null
+    private var clientService: ICompositorService? = null
     private var isBoundToClientService = false
     private var hasNotifiedCompositorReady = false
     private var isShuttingDown = false
     private var pendingConfigText: String? = null
-    private val mBinder = object : ICompositorService.Stub() {
-        override fun isCompositorReady(): Boolean {
-            return isCompositorRunning()
-        }
+    private val binder = object : ICompositorService.Stub() {
+        override fun isCompositorReady() = isCompositorRunning()
 
         override fun notifyCompositorReady() {
             Log.e(TAG, "Unexpected call from client: notifyCompositorReady()")
@@ -70,39 +69,30 @@ class CompositorService : Service() {
                 return
             }
             pendingConfigText = configText
-            if (compositorService == null) {
-                return
-            }
-            startCompositorIfNeeded(configText)
-            notifyClientIfReady()
+            startAndNotifyIfPossible()
         }
     }
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             Log.d(TAG, "CompositorService connected")
-            compositorService = ICompositorService.Stub.asInterface(service)
-            pendingConfigText?.let { startCompositorIfNeeded(it) }
-            notifyClientIfReady()
+            clientService = ICompositorService.Stub.asInterface(service)
+            startAndNotifyIfPossible()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             Log.d(TAG, "CompositorService disconnected")
-            compositorService = null
+            clientService = null
             isBoundToClientService = false
             hasNotifiedCompositorReady = false
         }
     }
 
     private fun bindToCompositorService() {
-        val intent = Intent()
-        intent.component = ComponentName("org.yabe.xreal_client", "org.yabe.xreal_client.CompositorService")
+        val intent = Intent().setComponent(ComponentName(CLIENT_PACKAGE, CLIENT_SERVICE))
         val success = bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         isBoundToClientService = success
-        if (success) {
-            Log.d(TAG, "bindService() succeeded")
-        } else {
-            Log.d(TAG, "bindService() failed")
-        }
+        Log.d(TAG, "bindService() ${if (success) "succeeded" else "failed"}")
     }
 
     override fun onCreate() {
@@ -118,7 +108,7 @@ class CompositorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder {
         Log.d(TAG, "CompositorService bound by intent: $intent")
-        return mBinder
+        return binder
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -148,23 +138,21 @@ class CompositorService : Service() {
             unbindService(serviceConnection)
             isBoundToClientService = false
         }
-        compositorService = null
+        clientService = null
         terminateCompositor()
     }
 
-    private fun startCompositorIfNeeded(configText: String) {
-        if (isCompositorRunning()) {
-            return
+    private fun startAndNotifyIfPossible() {
+        val service = clientService ?: return
+        val configText = pendingConfigText ?: return
+        if (!isCompositorRunning()) {
+            startCompositor(configText)
         }
-        startCompositor(configText)
-    }
-
-    private fun notifyClientIfReady() {
-        if (compositorService == null || hasNotifiedCompositorReady || !isCompositorRunning()) {
+        if (hasNotifiedCompositorReady) {
             return
         }
         try {
-            compositorService?.notifyCompositorReady()
+            service.notifyCompositorReady()
             hasNotifiedCompositorReady = true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to notify that the compositor is ready", e)
@@ -178,7 +166,7 @@ class CompositorService : Service() {
         variant: String,
         options: String
     ): String? {
-        val service = compositorService ?: return null
+        val service = clientService ?: return null
         return try {
             service.createKeymap(rules, model, layout, variant, options)
         } catch (e: Exception) {
@@ -188,7 +176,7 @@ class CompositorService : Service() {
     }
 
     private fun exec(argv: Array<String>): Int {
-        val service = compositorService ?: return -1
+        val service = clientService ?: return -1
         return try {
             service.exec(argv)
         } catch (e: Exception) {

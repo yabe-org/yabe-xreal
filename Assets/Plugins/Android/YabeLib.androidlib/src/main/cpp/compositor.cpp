@@ -16,33 +16,60 @@
 
 namespace {
 std::thread      compositor_thread;
-std::atomic_bool is_compositor_running_     = false;
-std::atomic_bool is_compositor_initialized_ = false;
-JavaVM*          java_vm_                   = nullptr;
-jobject          compositor_service_        = nullptr;
-std::string      keymap_str_;
+std::atomic_bool compositor_running = false;
+std::atomic_bool compositor_ready   = false;
+JavaVM*          java_vm            = nullptr;
+jobject          compositor_service = nullptr;
+std::string      keymap_text;
 
-int exec_in_andlify(const char* const * argv) {
-  JNIEnv* env                     = nullptr;
-  bool    attached_current_thread = false;
-  if (java_vm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) ==
-      JNI_EDETACHED) {
-    if (java_vm_->AttachCurrentThread(&env, nullptr) != JNI_OK) {
-      LOG_ERR("Failed to attach compositor thread to JVM");
-      return -1;
+class ScopedJniEnv {
+ public:
+  ScopedJniEnv() {
+    if (!java_vm) {
+      return;
     }
-    attached_current_thread = true;
+    const auto result =
+        java_vm->GetEnv(reinterpret_cast<void**>(&env_), JNI_VERSION_1_6);
+    if (result == JNI_OK) {
+      return;
+    }
+    if (result != JNI_EDETACHED ||
+        java_vm->AttachCurrentThread(&env_, nullptr) != JNI_OK) {
+      env_ = nullptr;
+      return;
+    }
+    attached_ = true;
   }
 
-  auto* service_class = env->GetObjectClass(compositor_service_);
+  ~ScopedJniEnv() {
+    if (attached_) {
+      java_vm->DetachCurrentThread();
+    }
+  }
+
+  JNIEnv* get() const {
+    return env_;
+  }
+
+ private:
+  JNIEnv* env_      = nullptr;
+  bool    attached_ = false;
+};
+
+int exec_in_client(const char* const * argv) {
+  ScopedJniEnv scoped_env;
+  auto*        env = scoped_env.get();
+  if (!env || !compositor_service) {
+    LOG_ERR("CompositorService is unavailable while executing a command");
+    return -1;
+  }
+
+  auto* service_class = env->GetObjectClass(compositor_service);
   auto  exec_method =
       env->GetMethodID(service_class, "exec", "([Ljava/lang/String;)I");
   if (!exec_method) {
     env->ExceptionClear();
     env->DeleteLocalRef(service_class);
-    if (attached_current_thread) {
-      java_vm_->DetachCurrentThread();
-    }
     LOG_ERR("Failed to find CompositorService.exec()");
     return -1;
   }
@@ -58,8 +85,7 @@ int exec_in_andlify(const char* const * argv) {
     env->SetObjectArrayElement(args, i, arg);
     env->DeleteLocalRef(arg);
   }
-  const auto result =
-      env->CallIntMethod(compositor_service_, exec_method, args);
+  const auto result = env->CallIntMethod(compositor_service, exec_method, args);
   env->DeleteLocalRef(args);
   env->DeleteLocalRef(string_class);
   env->DeleteLocalRef(service_class);
@@ -68,41 +94,28 @@ int exec_in_andlify(const char* const * argv) {
     env->ExceptionDescribe();
     env->ExceptionClear();
     LOG_ERR("Failed to execute command in xreal-client");
-    if (attached_current_thread) {
-      java_vm_->DetachCurrentThread();
-    }
     return -1;
-  }
-  if (attached_current_thread) {
-    java_vm_->DetachCurrentThread();
   }
   return result;
 }
 
 const char* create_keymap(const char* rules, const char* model,
     const char* layout, const char* variant, const char* options) {
-  keymap_str_.clear();
-  JNIEnv* env                     = nullptr;
-  bool    attached_current_thread = false;
-  if (java_vm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) ==
-      JNI_EDETACHED) {
-    if (java_vm_->AttachCurrentThread(&env, nullptr) != JNI_OK) {
-      LOG_ERR("Failed to attach compositor thread to JVM");
-      return nullptr;
-    }
-    attached_current_thread = true;
+  keymap_text.clear();
+  ScopedJniEnv scoped_env;
+  auto*        env = scoped_env.get();
+  if (!env || !compositor_service) {
+    LOG_ERR("CompositorService is unavailable while creating a keymap");
+    return nullptr;
   }
 
-  auto* service_class        = env->GetObjectClass(compositor_service_);
+  auto* service_class        = env->GetObjectClass(compositor_service);
   auto  create_keymap_method = env->GetMethodID(service_class, "createKeymap",
       "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/"
       "String;Ljava/lang/String;)Ljava/lang/String;");
   if (!create_keymap_method) {
     env->ExceptionClear();
     env->DeleteLocalRef(service_class);
-    if (attached_current_thread) {
-      java_vm_->DetachCurrentThread();
-    }
     LOG_ERR("Failed to find CompositorService.createKeymap()");
     return nullptr;
   }
@@ -111,7 +124,7 @@ const char* create_keymap(const char* rules, const char* model,
   auto* layout_string  = env->NewStringUTF(layout);
   auto* variant_string = env->NewStringUTF(variant);
   auto* options_string = env->NewStringUTF(options);
-  auto* result = static_cast<jstring>(env->CallObjectMethod(compositor_service_,
+  auto* result = static_cast<jstring>(env->CallObjectMethod(compositor_service,
       create_keymap_method, rules_string, model_string, layout_string,
       variant_string, options_string));
   env->DeleteLocalRef(rules_string);
@@ -128,84 +141,91 @@ const char* create_keymap(const char* rules, const char* model,
   } else if (result) {
     const char* result_chars = env->GetStringUTFChars(result, nullptr);
     if (result_chars) {
-      keymap_str_ = result_chars;
+      keymap_text = result_chars;
       env->ReleaseStringUTFChars(result, result_chars);
     }
     env->DeleteLocalRef(result);
   }
-  if (attached_current_thread) {
-    java_vm_->DetachCurrentThread();
-  }
-  return keymap_str_.empty() ? nullptr : keymap_str_.c_str();
+  return keymap_text.empty() ? nullptr : keymap_text.c_str();
 }
 }  // namespace
 
 extern "C" {
 bool is_compositor_running() {
-  return is_compositor_running_.load();
+  return compositor_running.load();
 }
 
 void terminate_compositor() {
-  if (compositor_thread.joinable()) {
+  if (!compositor_thread.joinable()) {
+    LOG_DBG("compositor thread is not running");
+    return;
+  }
+  if (compositor_running.load()) {
     LOG_DBG("terminating compositor thread");
     yabe_compositor_terminate();
-    compositor_thread.join();
-    is_compositor_running_.store(false);
-    LOG_DBG("compositor thread terminated");
-  } else {
-    LOG_DBG("compositor thread is not running");
   }
+  compositor_thread.join();
+  LOG_DBG("compositor thread terminated");
 }
 
-JNIEXPORT void JNICALL Java_org_yabe_xreal_CompositorService_startCompositor(
+void send_keyboard_key(uint32_t key, bool is_pressed) {
+  if (!compositor_ready.load()) {
+    return;
+  }
+  yabe_compositor_key(key, is_pressed);
+}
+
+#define JNI_METHOD(return_type, name)                                          \
+  extern "C" JNIEXPORT return_type JNICALL                                     \
+      Java_org_yabe_xreal_CompositorService_##name
+
+JNI_METHOD(void, startCompositor)(
     JNIEnv* env, jobject obj, jstring config_text) {
-  env->GetJavaVM(&java_vm_);
-  compositor_service_      = env->NewGlobalRef(obj);
+  if (compositor_running.exchange(true)) {
+    LOG_DBG("compositor thread is already running");
+    return;
+  }
+  if (compositor_thread.joinable()) {
+    compositor_thread.join();
+  }
+  env->GetJavaVM(&java_vm);
+  if (compositor_service) {
+    env->DeleteGlobalRef(compositor_service);
+  }
+  compositor_service       = env->NewGlobalRef(obj);
   const char* config_chars = env->GetStringUTFChars(config_text, nullptr);
   std::string config(config_chars);
   env->ReleaseStringUTFChars(config_text, config_chars);
-  is_compositor_running_.store(true);
   compositor_thread = std::thread([config = std::move(config)]() {
     yabe_compositor_init(
         [](const char* s) {
           __android_log_print(ANDROID_LOG_DEBUG, "YabeCompositor", "%s", s);
         },
-        create_keymap, exec_in_andlify);
+        create_keymap, exec_in_client);
     yabe_compositor_load_config(config.c_str());
-    is_compositor_initialized_.store(true);
+    compositor_ready.store(true);
     LOG_DBG("compositor start");
     yabe_compositor_start();
-    is_compositor_initialized_.store(false);
+    compositor_ready.store(false);
+    compositor_running.store(false);
     LOG_DBG("finished: yabe_compositor_start()");
   });
 }
 
-JNIEXPORT void JNICALL Java_org_yabe_xreal_CompositorService_addClientFd(
-    JNIEnv* env, jobject obj, jint fd) {
+JNI_METHOD(void, addClientFd)(JNIEnv* env, jobject obj, jint fd) {
   yabe_compositor_add_client_fd(fd);
 }
 
-JNIEXPORT void JNICALL
-Java_org_yabe_xreal_CompositorService_terminateCompositor(
-    JNIEnv* env, jobject obj) {
+JNI_METHOD(void, terminateCompositor)(JNIEnv* env, jobject obj) {
   terminate_compositor();
-  if (compositor_service_) {
-    env->DeleteGlobalRef(compositor_service_);
-    compositor_service_ = nullptr;
+  if (compositor_service) {
+    env->DeleteGlobalRef(compositor_service);
+    compositor_service = nullptr;
   }
-  keymap_str_.clear();
+  keymap_text.clear();
 }
 
-JNIEXPORT jboolean JNICALL
-Java_org_yabe_xreal_CompositorService_isCompositorRunning(
-    JNIEnv* env, jobject obj) {
-  return is_compositor_running_.load();
-}
-
-void send_keyboard_key(uint32_t key, bool is_pressed) {
-  if (!is_compositor_initialized_.load()) {
-    return;
-  }
-  yabe_compositor_key(key, is_pressed);
+JNI_METHOD(jboolean, isCompositorRunning)(JNIEnv* env, jobject obj) {
+  return compositor_running.load();
 }
 }

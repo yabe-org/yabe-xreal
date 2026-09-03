@@ -7,58 +7,58 @@ import android.view.ViewTreeObserver
 import java.lang.ref.WeakReference
 
 object MouseCapture {
-  private const val TAG = "YabeXreal"
+    private const val TAG = "YabeXreal"
 
-  @Volatile
-  private var captureRequested = false
+    @Volatile
+    private var captureRequested = false
 
-  private var currentView: WeakReference<View>? = null
+    private var currentView: WeakReference<View>? = null
 
-  private val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
-    Log.i(TAG, "Mouse capture window focus: $hasFocus")
-    val view = currentView?.get()
-    if (!hasFocus || !captureRequested || view == null) {
-      return@OnWindowFocusChangeListener
+    private val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+        Log.i(TAG, "Mouse capture window focus: $hasFocus")
+        val view = currentView?.get()
+        if (!hasFocus || !captureRequested || view == null) {
+            return@OnWindowFocusChangeListener
+        }
+        applyMouseCapture(view)
     }
-    applyMouseCapture(view)
-  }
 
-  @JvmStatic
-  fun setMouseCapture(activity: Activity, shouldCapture: Boolean) {
-    captureRequested = shouldCapture
-    activity.runOnUiThread {
-      val view = activity.window.decorView
-      bind(view)
-      applyMouseCapture(view)
+    @JvmStatic
+    fun setMouseCapture(activity: Activity, shouldCapture: Boolean) {
+        captureRequested = shouldCapture
+        activity.runOnUiThread {
+            val view = activity.window.decorView
+            bind(view)
+            applyMouseCapture(view)
+        }
     }
-  }
 
-  private fun bind(view: View) {
-    val oldView = currentView?.get()
-    if (oldView === view) {
-      return
+    private fun bind(view: View) {
+        val oldView = currentView?.get()
+        if (oldView === view) {
+            return
+        }
+        val oldObserver = oldView?.viewTreeObserver
+        if (oldObserver?.isAlive == true) {
+            oldObserver.removeOnWindowFocusChangeListener(focusListener)
+        }
+        currentView = WeakReference(view)
+        view.viewTreeObserver.addOnWindowFocusChangeListener(focusListener)
     }
-    val oldObserver = oldView?.viewTreeObserver
-    if (oldObserver?.isAlive == true) {
-      oldObserver.removeOnWindowFocusChangeListener(focusListener)
-    }
-    currentView = WeakReference(view)
-    view.viewTreeObserver.addOnWindowFocusChangeListener(focusListener)
-  }
 
-  private fun applyMouseCapture(view: View) {
-    Log.i(
-      TAG,
-      "Mouse capture view state: attached=${view.isAttachedToWindow}, focused=${view.hasWindowFocus()}",
-    )
-    if (!captureRequested) {
-      view.releasePointerCapture()
-      return
+    private fun applyMouseCapture(view: View) {
+        Log.i(
+            TAG,
+            "Mouse capture view state: attached=${view.isAttachedToWindow}, focused=${view.hasWindowFocus()}",
+        )
+        if (!captureRequested) {
+            view.releasePointerCapture()
+            return
+        }
+        if (!view.hasWindowFocus()) {
+            Log.i(TAG, "Mouse capture is pending until window focus is acquired")
+            return
+        }
+        view.requestPointerCapture()
     }
-    if (!view.hasWindowFocus()) {
-      Log.i(TAG, "Mouse capture is pending until window focus is acquired")
-      return
-    }
-    view.requestPointerCapture()
-  }
 }

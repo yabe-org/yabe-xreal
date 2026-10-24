@@ -35,6 +35,9 @@ class CompositorService : Service() {
                 return
             }
             pendingConfigText = configText
+            if (isCompositorRunning()) {
+                reloadConfig(configText)
+            }
             startAndNotifyIfPossible()
         }
 
@@ -187,6 +190,7 @@ class CompositorService : Service() {
     }
 
     private external fun startCompositor(configText: String)
+    private external fun reloadConfig(configText: String)
     private external fun terminateCompositor()
     private external fun addClientFd(fd: Int)
     private external fun isCompositorRunning(): Boolean

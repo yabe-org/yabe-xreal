@@ -212,6 +212,17 @@ JNI_METHOD(void, startCompositor)(
   });
 }
 
+JNI_METHOD(void, reloadConfig)(JNIEnv* env, jobject obj, jstring config_text) {
+  if (!compositor_ready.load()) {
+    LOG_DBG("compositor is not ready; config is not reloaded");
+    return;
+  }
+  const char* config_chars = env->GetStringUTFChars(config_text, nullptr);
+  yabe_compositor_load_config(config_chars);
+  env->ReleaseStringUTFChars(config_text, config_chars);
+  LOG_DBG("config reloaded");
+}
+
 JNI_METHOD(void, addClientFd)(JNIEnv* env, jobject obj, jint fd) {
   yabe_compositor_add_client_fd(fd);
 }

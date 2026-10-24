@@ -94,7 +94,7 @@ public class CameraOverride : MonoBehaviour
     {
         CommandBuffer buffer = new CommandBuffer();
         buffer.name = name;
-        buffer.ClearRenderTarget(true, true, Color.red);
+        buffer.ClearRenderTarget(true, true, Color.clear);
         buffer.IssuePluginEvent(handlePtr, (int)eyeEvent);
         return buffer;
     }

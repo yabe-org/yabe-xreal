@@ -21,12 +21,12 @@ class CompositorService : Service() {
     }
 
     @Volatile
-    private var clientService: ICompositorService? = null
+    private var clientService: IClientHost? = null
     private var isBoundToClientService = false
     private var hasNotifiedCompositorReady = false
     private var isShuttingDown = false
     private var pendingConfigText: String? = null
-    private val binder = object : ICompositorService.Stub() {
+    private val binder = object : ICompositorHost.Stub() {
         override fun isCompositorReady() = isCompositorRunning()
 
         override fun setConfigText(configText: String?) {
@@ -54,33 +54,12 @@ class CompositorService : Service() {
             Log.d(TAG, "Received file descriptor: $fd")
             addClientFd(fd)
         }
-
-        override fun notifyCompositorReady() {
-            Log.e(TAG, "Unexpected call from client: notifyCompositorReady()")
-        }
-
-        override fun createKeymap(
-            rules: String?,
-            model: String?,
-            layout: String?,
-            variant: String?,
-            options: String?
-        ): String? {
-            Log.e(TAG, "Unexpected call from client: createKeymap()")
-            return null
-        }
-
-        override fun exec(argv: Array<out String>?): Int {
-            Log.e(TAG, "Unexpected call from client: exec()")
-            return -1
-        }
-
     }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             Log.d(TAG, "CompositorService connected")
-            clientService = ICompositorService.Stub.asInterface(service)
+            clientService = IClientHost.Stub.asInterface(service)
             startAndNotifyIfPossible()
         }
 

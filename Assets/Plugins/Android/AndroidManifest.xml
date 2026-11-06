@@ -10,7 +10,7 @@
       android:exported="true"
       android:enabled="true">
       <intent-filter>
-        <action android:name="org.yabe.xreal.ICompositorService" />
+        <action android:name="org.yabe.xreal.ICompositorHost" />
       </intent-filter>
     </service>
   </application>

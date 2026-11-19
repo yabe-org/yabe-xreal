@@ -67,7 +67,6 @@ public class PointerInput : MonoBehaviour
     HandleMouse();
   }
 
-  const float MouseMovementDeltaMultiplier = 0.002F;
   const float MouseScrollDeltaMultiplier = 1.0F;
   void HandleMouse()
   {
@@ -77,7 +76,7 @@ public class PointerInput : MonoBehaviour
       return;
     }
 
-    var movement = mouse.delta.ReadValue() * MouseMovementDeltaMultiplier;
+    var movement = mouse.delta.ReadValue();
     if (movement != Vector2.zero)
     {
       NativePlugin.yabe_compositor_move_pointer(movement.x, movement.y);
@@ -121,7 +120,7 @@ public class PointerInput : MonoBehaviour
     Scroll,
   }
   TapStatus tapState = TapStatus.Idle;
-  const float TapMovementDeltaMultiplier = 0.0008F;
+  const float TapMovementDeltaMultiplier = 0.4F;
   const float TapScrollDeltaMultiplier = 0.006F;
   const float TapThresholdSec = 0.2F;
   float passedSecFromBegan = 0.0F;
